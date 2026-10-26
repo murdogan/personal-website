@@ -1,0 +1,32 @@
+Tool: built-in image_gen.imagegen
+
+Cutout: transparent_background=true
+
+Use case: background-extraction / identity-preserve.
+Edit target: the provided real photograph. Create a clean transparent-background portrait cutout of ONLY the main adult man seated at the cafe, for use in his personal website hero.
+
+Extract the actual man in the photograph, preserving his exact identity and photographic appearance: same face, facial proportions, eyes, eyebrows, nose, hairline, dark hair, short beard, natural smile, skin texture and skin tone. Preserve his actual white open-collar button-down shirt, its wrinkles, body proportions, natural seated posture and the visible black smartwatch if within the crop. Do not beautify, change age, replace the face, invent a different man, change the shirt color, replace clothing or restyle the photograph.
+
+Output a useful WAIST-UP cutout, centered, with his complete head/hair and both shoulders and upper torso comfortably inside the frame. Crop around the lower torso, before the table/lap area becomes relevant. Keep the original pose; do not try to make him stand, turn his head, move his hands, or invent body parts occluded by furniture. Preserve clean natural hair edges, collar and shoulder contours.
+
+REMOVE every non-person element: the original cafe shelves and wall, all background, table, cup and saucer, ashtray, chair and any other person's skin visible at the extreme edge. The man himself is the only subject. The entire area outside the extracted man must have genuine alpha transparency, not white, gray, black, a checkerboard baked into pixels, or a newly painted studio backdrop. No glow, no shadow outside the cutout, no text or labels, no frame. A neutral photographic cutout with original color and facial identity, ready for compositing.
+
+Homepage: transparent_background=false
+
+Use case: precise website mockup image edit, identity-preserving portrait replacement.
+INPUT ROLES:
+Image 1 is the existing personal website homepage design. It is the layout and style to preserve.
+Image 2 is the real user's original photograph and the authoritative reference for his facial identity and actual clothing.
+Image 3 is an extracted transparent portrait of that same user, ready to insert.
+
+TASK:
+Replace ONLY the fictional black-shirted man in the hero of Image 1 with the actual man from Images 2 and 3. Use his photographic cutout: his real face, short dark hair, beard, gentle natural smile, skin texture, and white open-collar button-down shirt. Preserve his exact recognizable facial proportions and seated upper-body pose. Do not use the fictional model's face, body, hair or black shirt. Do not beautify, reimagine, change age, stylize, or invent a different portrait. His white shirt must remain white, with its real collar and wrinkles.
+
+COMPOSITION:
+Fit a natural waist-up or chest-up crop of the actual man in the same central hero portrait position and at comparable visual prominence. His complete head should sit below the top navigation and be prominent. Adapt scale and cropping to the existing hero: show head, shoulders and upper torso; any lower seated limbs can be cropped behind the giant name typography. Do not invent standing legs or a standing pose. Remove every cafe/background item, table, coffee cup, saucer, ashtray, chair, and any other person: only the user is extracted into the hero. Blend the portrait's edge naturally with the dark hero. Keep the pale ivory/lime flowing light ribbons behind him and allow one subtle existing ribbon to cross in front of the shoulder/body without covering the face.
+
+PRESERVE THE DESIGN:
+Keep the original portrait-oriented full homepage composition, dark charcoal hero background, pale lime and ivory flowing ribbons, restrained typography, nav placement, top-left AD SOYAD placeholder, top-right prominent Sitede ara... search field, Projeler / Hakkımda / İletişim nav, left KİŞİSEL WEB SİTESİ and circular down arrow, right Projelerim. Fikirlerim. Deneyimlerim. copy, right edge Bana sor assistant pill with lime star, giant ivory AD SOYAD — type across the lower hero in front of the user's lower torso, and the warm ivory selected-projects section below. Preserve the two project rows, project preview image, black arrows, and their text arrangement. Do not redesign, add new sections, change the palette, move search, or remove the chatbot.
+
+Remove the small ÖRNEK PORTRE label because this is now the owner's actual photograph. Do NOT infer a name; keep AD SOYAD placeholders exactly. No new badges, portrait labels, watermarks or decorative frames. Output a polished opaque full homepage mockup, maintaining Image 1's overall aspect ratio and structure.
+
