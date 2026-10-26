@@ -1,0 +1,36 @@
+# Local secrets; example configuration stays versioned.
+.env
+.env.*
+!.env.example
+!.env.*.example
+*.pem
+*.key
+
+# Rust build output. Cargo.lock stays versioned for this application.
+/target/
+/backend/target/
+
+# Astro / React dependencies and generated output.
+/web/node_modules/
+/web/dist/
+/web/.astro/
+/web/.vite/
+/web/coverage/
+/web/playwright-report/
+/web/test-results/
+*.tsbuildinfo
+
+# Local runtime, release artifacts and model weights.
+/runtime/
+/artifacts/
+/releases/
+/bundle/
+*.gguf
+*.log
+
+# OS and editor temporary files.
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
