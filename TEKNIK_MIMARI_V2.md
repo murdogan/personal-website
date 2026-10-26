@@ -1,11 +1,12 @@
 # Kişisel Web Sitesi — Teknik Mimari v2
 
-Sürüm: 2.1 — alternatif mimari önerisi
+Sürüm: 2.2 — alternatif mimari önerisi
 Tarih: 26 Ekim 2026
 Durum: Öneri. Onaylanırsa [TEKNIK_MIMARI.md](TEKNIK_MIMARI.md) (v1) belgesinin yerine geçer. Uygulama kodu yok.
 
 Değişiklik kaydı:
 
+- 2.2: Uygulama fazlarıyla ([fazlar/](fazlar/README.md)) hizalama. `deployctl` ve `site-eval` crate'leri (5, 8.1); asistan bağlamında geçmiş artık kaynaklardan önce (10.1, 10.2); `forbidden_origin` ve `not_found` hata kodları (11.2); lansman öncesi kip `SITE_MODE` (7); Faz 1'in Rust odağı (20).
 - 2.1: İnceleme düzeltmeleri. Mavi/yeşil API geçişi ve tek Caddy yeniden yüklemesi (D-03, 18.2); dağıtım kilidi ve eski commit reddi (D-11, 18.2); sürümler arası ortak varlık deposu ve sürüm farkı kuralları (D-12, 7.1); iki aşamalı istek kabulü (8.4, 10.6); Caddy `flush_interval -1` kaldırıldı, iptal uçtan uca test edilir (11.3, 17.2); intro için animasyondan bağımsız emniyet (12.3).
 - 2.0: İlk sürüm.
 
@@ -147,7 +148,9 @@ Tek depo:
 │     ├─ search/                    Türkçe analiz, indeks kurma ve okuma, sorgu, sıralama
 │     ├─ assistant/                 bağlam kartı, bağlam kurma, prompt, model istemcisi, atıf
 │     ├─ indexer/                   bin: export → bundle
-│     └─ api/                       bin: Axum sunucusu
+│     ├─ api/                       bin: Axum sunucusu
+│     ├─ deployctl/                 bin: sunucuda sürüm geçişi, geri alma, izleme
+│     └─ eval/                      bin: arama/asistan değerlendirmesi, ölçüm, yük testi
 ├─ eval/                            arama ve asistan soru setleri
 ├─ deploy/                          Caddyfile, systemd unit'leri, sürüm betikleri, model.toml, RUNBOOK.md
 ├─ docs/adr/
@@ -213,7 +216,7 @@ Astro derlemesinde statik bir endpoint ile üretilen JSON dosyasıdır. Sürüm 
 ```text
 ExportV1
   schemaVersion: 1
-  release:  { gitCommit, builtAt }
+  release:  { gitCommit }                         zaman damgası yok: aynı commit → aynı export
   site:     { name, headline, shortBio, skills[], links }
   tags:     [{ id, label, aliases[], group }]
   items:    [{
@@ -222,7 +225,7 @@ ExportV1
     url       kanonik yol (Astro üretir)
     title, summary, tags[], year, featured, order
     links     { repo?, demo? }
-    sections  [{ anchor, heading, text }]
+    sections  [{ anchor, heading, url, text }]    url hazır bağlantıdır (Rust URL kurmaz)
   }]
 ```
 
@@ -265,6 +268,7 @@ Kurallar:
 - Sunucuda son 5 sürüm klasörü tutulur. Geri alma (`just rollback <commit>`) dağıtımla aynı kilidi ve aynı geçiş adımlarını kullanır.
 - Geçişte kesinti yoktur: yeni API örneği hazır ve test edilmiş olmadan trafik ona yönelmez; eski örnek süren akışlarını bitirerek kapanır (18.2).
 - Yalnız içerik değişse de bütün hat çalışır (D-02). Rust derleme önbelleğiyle süre birkaç dakikadır; ayrı bir "yalnız içerik" yolu açılmaz.
+- Lansman öncesi kip (`SITE_MODE=prelaunch`): sayfalar `noindex`, `robots.txt` her şeyi kapatır, yer tutucu içeriğe izin verilir. `public` kipinde yer tutucu içerik derlemeyi durdurur. Geçiş lansman kontrol listesiyle yapılır.
 
 ### 7.1 Açık sekmeler ve sürüm farkı
 
@@ -286,7 +290,9 @@ Geçiş anında açık olan sekmeler eski sürümün HTML'iyle çalışmaya deva
 | search | Türkçe analiz zinciri, indeks kurma/okuma, sorgu ayrıştırma, sıralama | contract | axum, ağ |
 | assistant | Bağlam kartı, bağlam kurma, prompt şablonu, model istemcisi, atıf ayrıştırma | contract, search | axum |
 | indexer (bin) | Export'u doğrular → böler → Tantivy indeksi + bağlam kartı + manifest | contract, search, assistant | ağ (çevrimdışı çalışır) |
-| api (bin) | Axum route'ları, SSE, hız sınırı, yapılandırma, telemetri, kontrollü kapanış | hepsi | — |
+| api (bin) | Axum route'ları, SSE, hız sınırı, yapılandırma, telemetri, kontrollü kapanış | contract, search, assistant | — |
+| deployctl (bin) | Sürüm paketi, kilit, mavi/yeşil geçiş, varlık deposu, geri alma, model uygulama, izleme | — (senkron; yalnız dosya, süreç ve HTTP) | tokio, axum |
+| eval (bin) | `site-eval`: arama ve geri getirme değerlendirmesi, üretim raporu, model ölçümü, yük testi | contract, search, assistant | — |
 
 v1'deki katman crate'leri (domain/application/infrastructure/http/host) yerine **yetenek crate'leri** kullanılır. Bu sistemde zengin iş kuralı yok; karmaşıklık arama kalitesinde, bağlam seçiminde, akışta ve kaynak sınırlarında. Katmanlar bu crate'lerin içinde modül düzeyinde kalır: ör. `assistant::context` saf fonksiyonlardır, `assistant::model` I/O yapar.
 
@@ -436,7 +442,7 @@ sequenceDiagram
     S-->>A: bölümler + öğeler
     A->>A: bağlamı bütçeye göre kur
     A-->>U: event: meta, event: sources
-    A->>L: stream (sistem + bağlam kartı + kaynaklar + geçmiş + soru)
+    A->>L: stream (sistem + bağlam kartı + geçmiş + kaynaklar + soru)
     loop her parça
         L-->>A: token
         A-->>U: event: delta
@@ -454,12 +460,12 @@ Prompt sırası, llama-server'ın önek önbelleğini en iyi kullanacak biçimde
 | --- | --- | --- | --- |
 | 1 | Sistem talimatı: rol, kapsam, atıf ve çekimserlik kuralları | Sürümde | ~400 token |
 | 2 | Bağlam kartı: kim, ne yapar, proje listesi (başlık · tek cümle · etiketler) | Sürümde | ≤ 1.200 token |
-| 3 | Kaynaklar `[K1]…[Kn]`: geri getirilen bölümler | Her soruda | ≤ 1.500 token |
-| 4 | Geçmiş: son 3 tur, kısaltılmış | Her soruda | ≤ 600 token |
+| 3 | Geçmiş: son 3 tur, kısaltılmış, atıf işaretleri silinmiş | Turda bir büyür | ≤ 600 token |
+| 4 | Kaynaklar `[K1]…[Kn]`: geri getirilen bölümler (soruyla aynı kullanıcı mesajında) | Her soruda | ≤ 1.500 token |
 | 5 | Soru | Her soruda | ≤ 500 karakter |
 | — | Cevap | — | ≤ 500 token |
 
-1 ve 2 her istekte bayt bayt aynı olduğundan model bu öneki yeniden hesaplamaz. CPU'da istem işleme baskın maliyet olduğu için bu sıra ve bütçeler bir performans kararıdır, biçim tercihi değil.
+1 ve 2 her istekte bayt bayt aynı olduğundan model bu öneki yeniden hesaplamaz. Geçmiş, aynı konuşmanın sonraki turunda da önekin parçası olarak kalır; her soruda değişen kaynaklar en sona, sorunun yanına konur. CPU'da istem işleme baskın maliyet olduğu için bu sıra ve bütçeler bir performans kararıdır, biçim tercihi değil.
 
 - Bağlam kartı indeksleyicide üretilir. Bütçeyi aşarsa derleme durur ve yazar özetleri kısaltır. Token sayısı derlemede yaklaşık hesaplanır; API açılışta llama-server tokenizer'ıyla gerçek değeri ölçüp loglar.
 - "Hangi projeler üzerinde çalıştın?" türü sorular bağlam kartından cevaplanır; geri getirmeye bağlı değildir.
@@ -475,7 +481,7 @@ Geri getirme sorgusu = mevcut soru + bir önceki kullanıcı sorusu. Önceki cev
 - Model, kaynakları `[K2]` biçiminde etiketiyle anmaya yönlendirilir.
 - `sources` olayı sunucunun seçtiği kaynakları taşır: etiket, öğe id, başlık, URL. URL, export'taki kanonik adres ve bölüm anchor'ından gelir (D-06).
 - Cevap bitince sunucu metindeki etiketleri ayrıştırır; `done.cited` yalnız geçerli etiketleri içerir. Arayüz geçerli etiketleri kaynak kartına bağlar, geçersizleri düz metin gösterir.
-- Cevap Markdown'ı güvenli bir alt kümeyle gösterilir: ham HTML yok; yalnız site içi ve `sources` listesindeki bağlantılar tıklanabilir.
+- Cevap Markdown'ı güvenli bir alt kümeyle gösterilir: ham HTML yok; model metnindeki hiçbir bağlantı (site içi yollar dahil) tıklanabilir değildir. Tıklanabilir olanlar yalnız `sources` listesine dayanan `[Kn]` numaraları ve kaynak kartlarıdır.
 
 ### 10.5 Güvenlik sınırları
 
@@ -554,14 +560,14 @@ Sayfa içeriği için çalışma zamanı endpoint'i yoktur; sayfalar derleme zam
 
 ### 11.2 Hata biçimi
 
-`application/problem+json`: `type`, `title`, kararlı `code`, `traceId`, gerekirse `retryAfter`. Kodlar: `invalid_request`, `message_too_long`, `rate_limited`, `assistant_busy`, `assistant_offline`, `client_outdated` (409, 7.1), `internal`. İç ayrıntılar (dosya yolu, model hata metni) public yanıta girmez. Başarısız işlem `200` ile gizlenmez.
+`application/problem+json`: `type`, `title`, kararlı `code`, `traceId`, gerekirse `retryAfter`. Kodlar: `invalid_request` (400; yanlış içerik türünde 415), `forbidden_origin` (403), `not_found` (404), `client_outdated` (409, 7.1), `payload_too_large` (413, gövde sınırı), `message_too_long` (413, asistan mesajı), `rate_limited` (429), `assistant_busy` (503), `assistant_offline` (503), `internal` (500). İç ayrıntılar (dosya yolu, model hata metni) public yanıta girmez. Başarısız işlem `200` ile gizlenmez.
 
 ### 11.3 SSE olayları
 
 | Olay | İçerik | Not |
 | --- | --- | --- |
 | `meta` | requestId, release, model | Akışın ilk olayı |
-| `sources` | [{ label, itemId, title, url, sectionHeading? }] | Model çağrısından önce gönderilir |
+| `sources` | `{ sources: [{ label, itemId, title, url, sectionHeading }] }` | Model çağrısından önce gönderilir |
 | `delta` | text | Metin parçası |
 | `done` | finishReason (stop/length), cited[], timings | Başarılı terminal olay |
 | `error` | code, message | Başarısız terminal olay; kısmi cevap tamamlanmış sayılmaz |
@@ -696,7 +702,7 @@ Saldırı yüzeyi: statik dosyalar ve iki public endpoint (arama, asistan). Yön
 
 ## 16. Gözlemlenebilirlik ve işletim
 
-- **Loglar:** `tracing` ile JSON; her istekte `traceId`; journald, 14 gün saklama. Caddy erişim loglarında IP `ip_mask` filtresiyle kısaltılır.
+- **Loglar:** `tracing` ile JSON; her istekte `traceId`; journald, 14 gün saklama. site-api istek logu yalnız rota şablonunu yazar (URI ve sorgu dizesi yok). Caddy erişim ve varsayılan loglarında sorgu dizesindeki `q` ve `Referer` silinir, `remote_ip` ve `client_ip` `ip_mask` ile kısaltılır; erişim logu günlük döner ve 7 gün tutulur.
 - **Metrikler (`/metrics`):** HTTP gecikmesi ve hata oranı, arama süresi, asistan kuyruk beklemesi, ilk token süresi, token/sn, toplam süre, iptaller, 429/503 sayıları, model sağlığı, yüklü sürüm.
 - **İzleme:** Dışarıdan basit uptime denetimi (ana sayfa ve `/api/health/ready`). v1'de Prometheus/Grafana kurulmaz; ihtiyaç doğunca eklenir.
 - **Uyarılar:** site kapalı, sertifika süresi, disk %80, model 10 dakikadan uzun kapalı.
@@ -781,7 +787,7 @@ Yarıda kalan dağıtım: Kilit, sahibi olan süreç ölünce bırakılır. Sonr
 Notlar:
 
 - Geçiş sırasında iki API örneği kısa süre aynı llama-server'ı paylaşır. Toplam istek slot sayısını aşarsa fazlası llama-server'ın kendi kuyruğunda bekler; drenaj süresi bu durumu sınırlar.
-- Caddy yeniden yüklemesinin süren SSE akışlarını kesip kesmediği ilk dağıtım testinde ölçülür (17.2, senaryo 13). Kesiyorsa `stream_close_delay` drenaj süresine eşitlenir.
+- Caddy yeniden yüklemesinin süren SSE akışlarını kesip kesmediği ilk dağıtım testinde ölçülür (17.2, senaryo 13). Süren normal HTTP istekleri (SSE dahil) Caddy'nin `grace_period` ayarına tabidir; bu ayar verilmez (varsayılan: beklenir) veya ≥ 120 sn yapılır. `stream_close_delay` yalnız WebSocket gibi yükseltilmiş bağlantılar içindir.
 
 Model değişimi ayrı bir işlemdir: yeni dosya indirilir, checksum doğrulanır, üretim değerlendirmesi geçer, `model.toml` güncellenir ve llama-server yeniden başlatılır.
 
@@ -817,7 +823,7 @@ Model değişimi ayrı bir işlemdir: yeni dosya indirilir, checksum doğrulanı
 | Faz | Çıktı | Bitti sayılması için | Rust öğrenme odağı |
 | --- | --- | --- | --- |
 | 0 — Girdiler | Sunucu donanımı ve OS, alan adı, 2–3 gerçek proje metni, portre | Bilgiler bu belgeye işlendi | — |
-| 1 — Statik site | Astro, içerik şemaları, sayfalar, tasarım token'ları, CI, Caddy, sürüm/geri alma hattı (kilit, ortak varlık deposu) | Gerçek içerikli site test alan adında yayında; geri alma ve art arda iki push denendi | — |
+| 1 — Statik site | Astro, içerik şemaları, sayfalar, tasarım token'ları, CI, Caddy, `deployctl` ile sürüm/geri alma hattı (kilit, ortak varlık deposu) | Site test alan adında yayında; geri alma ve art arda iki push denendi | `deployctl`: dosya I/O, serde, tipli hatalar, trait ile test edilebilir sınır (async yok) |
 | 2a — İndeksleyici | `contract`, `search`, `indexer`; export v1; Türkçe analiz; altın testler | Arama değerlendirmesi CI'da geçiyor | serde, tipli hatalar, sahiplik, iterator'lar (async yok) |
 | 2b — Arama API'si | `api` crate'i, `/api/search`, hız sınırı, sağlık, arama adası, mavi/yeşil API geçişi | Arama sitede çalışıyor; API kapalıyken sayfalar etkilenmiyor; geçişte kesinti yok | Axum, `Arc` ile paylaşılan durum, extractor'lar, async temelleri |
 | 3 — Hero ve intro | Prototip → seçilen teknik; intro; sayfa geçişleri | Orta seviye telefonda bütçeler tutuyor; hareket azaltma ve JS kapalı senaryolar geçiyor | — |
@@ -825,6 +831,8 @@ Model değişimi ayrı bir işlemdir: yeni dosya indirilir, checksum doğrulanı
 | 5 — Sertleştirme | CSP, metrikler, uyarılar, runbook, kurtarma tatbikatı, asistan yük testi | Sıfırdan kurulum tatbikatı tamamlandı | — |
 
 Faz 2 ile Faz 3 paralel yürüyebilir. Rust zorluk sırasına göre ilerler: önce async içermeyen bir CLI, sonra okuma amaçlı bir HTTP servisi, en son akış ve iptal.
+
+Her fazın iş paketleri, bitti ölçütleri ve çıkış kapıları [fazlar/](fazlar/README.md) klasöründedir; kod bu belgelere göre iş paketi birimleriyle yazılır. Kalıcı kodlama kuralları kökteki [AGENTS.md](AGENTS.md) dosyasındadır.
 
 ## 21. Evrim yolu
 
@@ -886,7 +894,7 @@ Bu belgenin üç temel kararı Faz 1'den önce kullanıcı onayı gerektirir: AD
 | [ts-rs](https://github.com/Aleph-Alpha/ts-rs) | Rust tiplerinden TypeScript üretimi |
 | [tower_governor](https://docs.rs/tower_governor/latest/tower_governor/) | IP başına hız sınırı |
 | [cargo-deny](https://github.com/EmbarkStudios/cargo-deny) | Bağımlılık lisans ve güvenlik denetimi |
-| [Caddy reverse_proxy](https://caddyserver.com/docs/caddyfile/directives/reverse_proxy) | Proxy, SSE iletimi, `flush_interval` ve istemci kopuşunda iptal davranışı, `stream_close_delay` |
+| [Caddy reverse_proxy](https://caddyserver.com/docs/caddyfile/directives/reverse_proxy) | Proxy, SSE iletimi, `flush_interval` ve istemci kopuşunda iptal davranışı |
 | [Caddy komut satırı](https://caddyserver.com/docs/command-line) | `caddy reload` ile yapılandırma değişimi |
 | [WAI-ARIA combobox](https://www.w3.org/WAI/ARIA/apg/patterns/combobox/) | Erişilebilir arama alanı |
 | [Web Vitals](https://web.dev/articles/vitals) | Frontend performans ölçütleri |
